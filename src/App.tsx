@@ -1,0 +1,193 @@
+import { useRef, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { QuizStage } from './components/QuizStage';
+import { ResultStage } from './components/ResultStage';
+import { SetupStage } from './components/SetupStage';
+import { TopBar } from './components/TopBar';
+import type {
+  GameStage,
+  GenerateQuizResponse,
+  QuizAnswerRecord,
+  QuizConfig,
+  QuizQuestion,
+} from './types/quiz';
+import { soundEngine } from './utils/sound';
+
+const INITIAL_CONFIG: QuizConfig = {
+  mode: 'keyword',
+  keyword: '',
+  file: null,
+  questionCount: 10,
+  timeLimit: 10,
+  soundEnabled: true,
+};
+
+export default function App() {
+  const [stage, setStage] = useState<GameStage>('SETUP');
+  const [config, setConfig] = useState<QuizConfig>(INITIAL_CONFIG);
+  const [quizTitle, setQuizTitle] = useState('핵심 복습 퀴즈쇼');
+  const [sourceSummary, setSourceSummary] = useState<string | undefined>(undefined);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [records, setRecords] = useState<QuizAnswerRecord[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [gameKey, setGameKey] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleUpdateConfig = (partial: Partial<QuizConfig>) => {
+    setConfig((prev) => ({ ...prev, ...partial }));
+  };
+
+  const handleToggleSound = () => {
+    soundEngine.unlock();
+    const next = !config.soundEnabled;
+    handleUpdateConfig({ soundEnabled: next });
+    soundEngine.setEnabled(next);
+    if (next) {
+      soundEngine.playClick();
+    }
+  };
+
+  const handleStartGame = async () => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setErrorMessage(null);
+    setStage('LOADING');
+    soundEngine.setEnabled(config.soundEnabled);
+
+    try {
+      const payload =
+        config.mode === 'keyword'
+          ? {
+              mode: 'keyword',
+              keyword: config.keyword.trim(),
+              questionCount: config.questionCount,
+            }
+          : {
+              mode: 'file',
+              questionCount: config.questionCount,
+              file: config.file
+                ? {
+                    name: config.file.name,
+                    mimeType: config.file.mimeType,
+                    dataBase64: config.file.dataBase64,
+                  }
+                : null,
+            };
+
+      const res = await fetch('/api/quiz/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      const data = (await res.json()) as Partial<GenerateQuizResponse> & { error?: string };
+
+      if (!res.ok || !data.questions || data.questions.length === 0) {
+        throw new Error(data.error || '퀴즈를 생성하지 못했습니다. 다시 시도해주세요.');
+      }
+
+      setQuizTitle(data.title || '핵심 복습 퀴즈쇼');
+      setSourceSummary(data.sourceSummary);
+      setQuestions(data.questions);
+      setRecords([]);
+      setGameKey((k) => k + 1);
+      setStage('PLAYING');
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : '서버와 통신하는 중 오류가 발생했습니다.';
+      setErrorMessage(message);
+      setStage('SETUP');
+    }
+  };
+
+  const handleFinishQuiz = (finalRecords: QuizAnswerRecord[]) => {
+    setRecords(finalRecords);
+    setStage('RESULT');
+  };
+
+  const handleGoHome = () => {
+    abortControllerRef.current?.abort();
+    soundEngine.playClick();
+    setStage('SETUP');
+    setErrorMessage(null);
+  };
+
+  const handleScrollToSection = (sectionId: string) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col text-slate-100">
+      <TopBar
+        stage={stage}
+        soundEnabled={config.soundEnabled}
+        onToggleSound={handleToggleSound}
+        onGoHome={handleGoHome}
+        onScrollToSection={handleScrollToSection}
+      />
+
+      {stage === 'SETUP' && (
+        <SetupStage
+          config={config}
+          errorMessage={errorMessage}
+          onUpdateConfig={handleUpdateConfig}
+          onStartGame={() => void handleStartGame()}
+          onClearError={() => setErrorMessage(null)}
+        />
+      )}
+
+      {stage === 'LOADING' && (
+        <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center px-6 py-20 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-400/30 bg-amber-400/15 text-amber-300">
+            <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+          </div>
+          <h2 className="mt-6 text-2xl font-extrabold text-white">
+            맞춤 퀴즈쇼를 준비하고 있습니다
+          </h2>
+          <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-300">
+            {config.mode === 'file' && config.file
+              ? `교안 "${config.file.name}"의 핵심 내용을 분석해 OX와 객관식 문제 ${config.questionCount}개를 무작위로 섞는 중입니다.`
+              : `"${config.keyword.trim().slice(0, 40)}" 주제의 OX와 객관식 문제 ${config.questionCount}개를 생성하고 있습니다.`}
+          </p>
+          <button
+            type="button"
+            onClick={handleGoHome}
+            className="mt-8 cursor-pointer rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-xs font-bold text-slate-200 transition-colors hover:bg-white/15 hover:text-white"
+          >
+            취소하고 돌아가기
+          </button>
+        </main>
+      )}
+
+      {(stage === 'PLAYING' || stage === 'REVEAL') && questions.length > 0 && (
+        <QuizStage
+          key={gameKey}
+          quizTitle={quizTitle}
+          questions={questions}
+          timeLimit={config.timeLimit}
+          onFinishQuiz={handleFinishQuiz}
+        />
+      )}
+
+      {stage === 'RESULT' && (
+        <ResultStage
+          quizTitle={quizTitle}
+          sourceSummary={sourceSummary}
+          questions={questions}
+          records={records}
+          onReplaySameConfig={() => void handleStartGame()}
+          onGoSetup={handleGoHome}
+        />
+      )}
+    </div>
+  );
+}
