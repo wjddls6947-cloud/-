@@ -56,6 +56,10 @@ export default function App() {
     setStage('LOADING');
     soundEngine.setEnabled(config.soundEnabled);
 
+    const timeoutId = window.setTimeout(() => {
+      controller.abort('timeout');
+    }, 45000);
+
     try {
       const payload =
         config.mode === 'keyword'
@@ -71,7 +75,8 @@ export default function App() {
                 ? {
                     name: config.file.name,
                     mimeType: config.file.mimeType,
-                    dataBase64: config.file.dataBase64,
+                    extractedText: config.file.extractedText,
+                    dataBase64: config.file.extractedText ? undefined : config.file.dataBase64,
                   }
                 : null,
             };
@@ -83,10 +88,34 @@ export default function App() {
         signal: controller.signal,
       });
 
-      const data = (await res.json()) as Partial<GenerateQuizResponse> & { error?: string };
+      const rawText = await res.text();
+      let data: (Partial<GenerateQuizResponse> & { error?: string }) | null = null;
+      try {
+        data = JSON.parse(rawText) as Partial<GenerateQuizResponse> & { error?: string };
+      } catch {
+        console.error('Non-JSON response from /api/quiz/generate:', res.status, rawText.slice(0, 300));
+        if (res.status === 413) {
+          throw new Error(
+            '업로드한 파일 크기가 서버 제한을 초과했습니다. 더 작은 PDF를 사용하거나 PPTX 형식으로 올려주세요.'
+          );
+        }
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error(
+            '서버 응답 시간이 초과되었거나 일시적으로 연결이 불안정합니다. 문제 수를 줄이거나 잠시 후 다시 시도해주세요.'
+          );
+        }
+        if (res.status === 404 || rawText.includes('The page')) {
+          throw new Error(
+            `퀴즈 생성 서버 경로에 연결하지 못했습니다 (HTTP ${res.status}). 페이지를 새로고침하거나 잠시 후 다시 시도해주세요.`
+          );
+        }
+        throw new Error(
+          `서버에서 예상치 못한 응답을 반환했습니다 (HTTP ${res.status}). 잠시 후 다시 시도해주세요.`
+        );
+      }
 
-      if (!res.ok || !data.questions || data.questions.length === 0) {
-        throw new Error(data.error || '퀴즈를 생성하지 못했습니다. 다시 시도해주세요.');
+      if (!res.ok || !data?.questions || data.questions.length === 0) {
+        throw new Error(data?.error || '퀴즈를 생성하지 못했습니다. 다시 시도해주세요.');
       }
 
       setQuizTitle(data.title || '핵심 복습 퀴즈쇼');
@@ -96,6 +125,13 @@ export default function App() {
       setGameKey((k) => k + 1);
       setStage('PLAYING');
     } catch (err: unknown) {
+      if (controller.signal.aborted && controller.signal.reason === 'timeout') {
+        setErrorMessage(
+          '퀴즈 생성 요청 시간이 초과되었습니다. 문제 개수를 줄이거나 잠시 후 다시 시도해주세요.'
+        );
+        setStage('SETUP');
+        return;
+      }
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
@@ -103,6 +139,8 @@ export default function App() {
         err instanceof Error ? err.message : '서버와 통신하는 중 오류가 발생했습니다.';
       setErrorMessage(message);
       setStage('SETUP');
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 

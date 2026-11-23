@@ -17,7 +17,8 @@ interface GenerateQuizBody {
   file?: {
     name: string;
     mimeType: string;
-    dataBase64: string;
+    extractedText?: string;
+    dataBase64?: string;
   };
 }
 
@@ -257,71 +258,79 @@ async function startServer() {
         });
       } else {
         const file = body.file;
-        if (!file || !file.dataBase64 || !file.name) {
+        if (!file || !file.name || (!file.extractedText && !file.dataBase64)) {
           res.status(400).json({ error: '업로드된 교안 파일 정보가 올바르지 않습니다.' });
           return;
         }
 
         const lowerName = file.name.toLowerCase();
-        const base64Clean = file.dataBase64.includes(',')
-          ? file.dataBase64.split(',')[1]
-          : file.dataBase64;
-        const fileBuffer = Buffer.from(base64Clean, 'base64');
 
-        // Detect legacy binary .ppt (OLE2 signature D0 CF 11 E0)
-        const isOle2 =
-          fileBuffer.length >= 4 &&
-          fileBuffer[0] === 0xd0 &&
-          fileBuffer[1] === 0xcf &&
-          fileBuffer[2] === 0x11 &&
-          fileBuffer[3] === 0xe0;
-
-        if ((lowerName.endsWith('.ppt') && !lowerName.endsWith('.pptx')) || isOle2) {
-          res.status(400).json({
-            error:
-              '구형 .ppt 바이너리 파일은 지원되지 않습니다. PowerPoint에서 [.pptx] 또는 [.pdf] 형식으로 저장한 뒤 업로드해주세요.',
-          });
-          return;
-        }
-
-        if (lowerName.endsWith('.pdf') || file.mimeType === 'application/pdf') {
+        if (file.extractedText && file.extractedText.trim().length > 0) {
+          const cleanExtracted = file.extractedText.trim().slice(0, 80000);
           parts.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: base64Clean,
-            },
-          });
-          parts.push({
-            text: `첨부된 수업 교안 PDF("${file.name}")의 핵심 학습 내용을 정리하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.`,
-          });
-        } else if (
-          lowerName.endsWith('.pptx') ||
-          file.mimeType ===
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-        ) {
-          const slideText = await extractTextFromPptx(fileBuffer);
-          parts.push({
-            text: `다음은 수업 교안 PowerPoint("${file.name}")에서 추출한 슬라이드 전체 내용입니다. 이 내용을 바탕으로 핵심 개념을 복습하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${slideText}`,
-          });
-        } else if (
-          lowerName.endsWith('.txt') ||
-          lowerName.endsWith('.md') ||
-          lowerName.endsWith('.csv') ||
-          file.mimeType.startsWith('text/')
-        ) {
-          const textContent = fileBuffer.toString('utf-8').trim().slice(0, 80000);
-          if (!textContent) {
-            res.status(400).json({ error: '업로드한 텍스트 파일이 비어 있습니다.' });
-            return;
-          }
-          parts.push({
-            text: `다음은 수업 자료("${file.name}") 내용입니다. 이 내용을 바탕으로 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${textContent}`,
+            text: `다음은 수업 교안 파일("${file.name}")에서 추출한 전체 내용입니다. 이 내용을 바탕으로 핵심 개념을 복습하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${cleanExtracted}`,
           });
         } else {
-          res.status(400).json({
-            error: '지원하지 않는 파일 형식입니다. PDF(.pdf), PowerPoint(.pptx), 또는 텍스트(.txt, .md) 파일을 올려주세요.',
-          });
-          return;
+          const base64Clean = (file.dataBase64 ?? '').includes(',')
+            ? (file.dataBase64 ?? '').split(',')[1]
+            : (file.dataBase64 ?? '');
+          const fileBuffer = Buffer.from(base64Clean, 'base64');
+
+          // Detect legacy binary .ppt (OLE2 signature D0 CF 11 E0)
+          const isOle2 =
+            fileBuffer.length >= 4 &&
+            fileBuffer[0] === 0xd0 &&
+            fileBuffer[1] === 0xcf &&
+            fileBuffer[2] === 0x11 &&
+            fileBuffer[3] === 0xe0;
+
+          if ((lowerName.endsWith('.ppt') && !lowerName.endsWith('.pptx')) || isOle2) {
+            res.status(400).json({
+              error:
+                '구형 .ppt 바이너리 파일은 지원되지 않습니다. PowerPoint에서 [.pptx] 또는 [.pdf] 형식으로 저장한 뒤 업로드해주세요.',
+            });
+            return;
+          }
+
+          if (lowerName.endsWith('.pdf') || file.mimeType === 'application/pdf') {
+            parts.push({
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: base64Clean,
+              },
+            });
+            parts.push({
+              text: `첨부된 수업 교안 PDF("${file.name}")의 핵심 학습 내용을 정리하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.`,
+            });
+          } else if (
+            lowerName.endsWith('.pptx') ||
+            file.mimeType ===
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          ) {
+            const slideText = await extractTextFromPptx(fileBuffer);
+            parts.push({
+              text: `다음은 수업 교안 PowerPoint("${file.name}")에서 추출한 슬라이드 전체 내용입니다. 이 내용을 바탕으로 핵심 개념을 복습하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${slideText}`,
+            });
+          } else if (
+            lowerName.endsWith('.txt') ||
+            lowerName.endsWith('.md') ||
+            lowerName.endsWith('.csv') ||
+            file.mimeType.startsWith('text/')
+          ) {
+            const textContent = fileBuffer.toString('utf-8').trim().slice(0, 80000);
+            if (!textContent) {
+              res.status(400).json({ error: '업로드한 텍스트 파일이 비어 있습니다.' });
+              return;
+            }
+            parts.push({
+              text: `다음은 수업 자료("${file.name}") 내용입니다. 이 내용을 바탕으로 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${textContent}`,
+            });
+          } else {
+            res.status(400).json({
+              error: '지원하지 않는 파일 형식입니다. PDF(.pdf), PowerPoint(.pptx), 또는 텍스트(.txt, .md) 파일을 올려주세요.',
+            });
+            return;
+          }
         }
       }
 
@@ -377,10 +386,9 @@ async function startServer() {
       };
 
       const candidateModels = [
-        { model: 'gemini-4-hydrogen', delayMs: 0 },
-        { model: 'gemini-4-hydrogen', delayMs: 900 },
-        { model: 'gemini-3.1-flash-lite', delayMs: 600 },
-        { model: 'gemini-3.1-flash-lite', delayMs: 1400 },
+        { model: 'gemini-4-hydrogen', delayMs: 0, timeoutMs: 18000 },
+        { model: 'gemini-3.1-flash-lite', delayMs: 400, timeoutMs: 18000 },
+        { model: 'gemini-3.1-flash-lite', delayMs: 900, timeoutMs: 18000 },
       ];
 
       let responseText: string | undefined;
@@ -391,11 +399,16 @@ async function startServer() {
           await new Promise((resolve) => setTimeout(resolve, attempt.delayMs));
         }
         try {
-          const response = await ai.models.generateContent({
-            model: attempt.model,
-            contents: { parts },
-            config: requestConfig,
-          });
+          const response = await Promise.race([
+            ai.models.generateContent({
+              model: attempt.model,
+              contents: { parts },
+              config: requestConfig,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('ETIMEDOUT: Gemini API timeout')), attempt.timeoutMs)
+            ),
+          ]);
           if (response.text) {
             responseText = response.text;
             break;
@@ -476,6 +489,24 @@ async function startServer() {
         error: '퀴즈 생성 중 오류가 발생했습니다. 입력 내용을 확인하고 다시 시도해주세요.',
       });
     }
+  });
+
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({ error: '요청하신 API 경로를 찾을 수 없습니다.' });
+  });
+
+  app.use((err: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+    console.error('Express middleware error:', err);
+    const errObj = err as { type?: string; status?: number };
+    if (errObj?.type === 'entity.too.large' || errObj?.status === 413) {
+      res.status(413).json({
+        error: '업로드한 파일 용량이 너무 큽니다. 더 작은 파일을 업로드해주세요.',
+      });
+      return;
+    }
+    res.status(errObj?.status || 500).json({
+      error: '서버 요청 처리 중 오류가 발생했습니다.',
+    });
   });
 
   const isProd = process.env.NODE_ENV === 'production';

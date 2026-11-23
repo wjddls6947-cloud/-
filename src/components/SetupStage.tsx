@@ -15,6 +15,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import type { QuizConfig, TimeLimitSeconds, UploadedLessonFile } from '../types/quiz';
+import { extractTextFromPptxFile } from '../utils/pptx';
 import { soundEngine } from '../utils/sound';
 
 interface SetupStageProps {
@@ -39,7 +40,8 @@ const QUICK_TOPICS = [
   '기후 변화와 탄소 중립 에너지',
 ];
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB
+const MAX_PDF_BYTES = 15 * 1024 * 1024; // 15MB (keeps Base64 JSON safely under proxy limits)
+const MAX_PPTX_BYTES = 50 * 1024 * 1024; // 50MB (only slide text is extracted in browser)
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -65,8 +67,9 @@ export function SetupStage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [localFileError, setLocalFileError] = useState<string | null>(null);
+  const [isReadingFile, setIsReadingFile] = useState(false);
 
-  const handleFile = (file: File | undefined) => {
+  const handleFile = async (file: File | undefined) => {
     if (!file) return;
     setLocalFileError(null);
     onClearError();
@@ -79,50 +82,109 @@ export function SetupStage({
       return;
     }
 
-    const allowed =
-      lower.endsWith('.pdf') ||
-      lower.endsWith('.pptx') ||
-      lower.endsWith('.txt') ||
-      lower.endsWith('.md') ||
-      lower.endsWith('.csv');
+    const isPdf = lower.endsWith('.pdf');
+    const isPptx = lower.endsWith('.pptx');
+    const isText = lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.csv');
 
-    if (!allowed) {
-      setLocalFileError('PDF(.pdf), PowerPoint(.pptx), 또는 텍스트(.txt, .md) 파일만 업로드할 수 있습니다.');
+    if (!isPdf && !isPptx && !isText) {
+      setLocalFileError(
+        'PDF(.pdf), PowerPoint(.pptx), 또는 텍스트(.txt, .md) 파일만 업로드할 수 있습니다.'
+      );
       return;
     }
 
-    if (file.size > MAX_FILE_BYTES) {
-      setLocalFileError('파일 크기가 20MB를 초과했습니다. 20MB 이하의 교안 파일을 올려주세요.');
+    if (isPdf && file.size > MAX_PDF_BYTES) {
+      setLocalFileError(
+        'PDF 파일 크기가 15MB를 초과했습니다. 15MB 이하의 PDF를 올려주시거나 슬라이드를 나누어 업로드해주세요.'
+      );
       return;
     }
 
+    if (isPptx && file.size > MAX_PPTX_BYTES) {
+      setLocalFileError('PPTX 파일 크기가 50MB를 초과했습니다.');
+      return;
+    }
+
+    if (isPptx) {
+      setIsReadingFile(true);
+      try {
+        const { text, slideCount } = await extractTextFromPptxFile(file);
+        const uploaded: UploadedLessonFile = {
+          name: file.name,
+          mimeType:
+            file.type ||
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          size: file.size,
+          extractedText: text,
+          slideCount,
+        };
+        onUpdateConfig({ mode: 'file', file: uploaded });
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'PPTX 파일을 읽는 중 문제가 발생했습니다. PDF로 변환해 업로드해보세요.';
+        setLocalFileError(msg);
+      } finally {
+        setIsReadingFile(false);
+      }
+      return;
+    }
+
+    if (isText) {
+      setIsReadingFile(true);
+      try {
+        const rawText = (await file.text()).trim();
+        if (!rawText) {
+          setLocalFileError('업로드한 텍스트 파일이 비어 있습니다.');
+          return;
+        }
+        const uploaded: UploadedLessonFile = {
+          name: file.name,
+          mimeType: file.type || 'text/plain',
+          size: file.size,
+          extractedText: rawText.slice(0, 80000),
+        };
+        onUpdateConfig({ mode: 'file', file: uploaded });
+      } catch {
+        setLocalFileError('텍스트 파일을 읽는 중 문제가 발생했습니다.');
+      } finally {
+        setIsReadingFile(false);
+      }
+      return;
+    }
+
+    // PDF: read as Base64 for Gemini multimodal input
+    setIsReadingFile(true);
     const reader = new FileReader();
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : '';
       const uploaded: UploadedLessonFile = {
         name: file.name,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || 'application/pdf',
         size: file.size,
         dataBase64: result,
       };
       onUpdateConfig({ mode: 'file', file: uploaded });
+      setIsReadingFile(false);
     };
     reader.onerror = () => {
-      setLocalFileError('파일을 읽는 중 문제가 발생했습니다. 다시 선택해주세요.');
+      setLocalFileError('PDF 파일을 읽는 중 문제가 발생했습니다. 다시 선택해주세요.');
+      setIsReadingFile(false);
     };
     reader.readAsDataURL(file);
   };
 
   const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    handleFile(file);
+    void handleFile(file);
     e.target.value = '';
   };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    handleFile(e.dataTransfer.files?.[0]);
+    void handleFile(e.dataTransfer.files?.[0]);
   };
 
   const handleCountChange = (next: number) => {
@@ -334,13 +396,15 @@ export function SetupStage({
                       <Upload className="h-6 w-6" aria-hidden="true" />
                     </div>
                     <p className="mt-4 text-sm font-bold text-slate-900">
-                      여기를 클릭하거나 교안 파일을 끌어다 놓으세요
+                      {isReadingFile
+                        ? '교안 파일 내용을 읽고 있습니다...'
+                        : '여기를 클릭하거나 교안 파일을 끌어다 놓으세요'}
                     </p>
                     <p className="mt-1.5 text-xs text-slate-500">
-                      지원 형식: PDF (.pdf) · PowerPoint (.pptx) · 텍스트 (.txt, .md) · 최대 20MB
+                      지원 형식: PDF (.pdf, 15MB 이하) · PowerPoint (.pptx, 50MB 이하) · 텍스트 (.txt, .md)
                     </p>
                     <span className="mt-4 inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">
-                      파일 찾아보기
+                      {isReadingFile ? '불러오는 중...' : '파일 찾아보기'}
                     </span>
                   </div>
                 ) : (
@@ -360,6 +424,14 @@ export function SetupStage({
                             <span className="font-mono tabular-nums">
                               {formatBytes(config.file.size)}
                             </span>
+                            {typeof config.file.slideCount === 'number' && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-mono tabular-nums">
+                                  {config.file.slideCount}슬라이드 추출됨
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -376,7 +448,11 @@ export function SetupStage({
                       </button>
                     </div>
                     <div className="mt-4 flex items-center justify-between border-t border-indigo-200/70 pt-3 text-xs text-indigo-900">
-                      <span>업로드 완료 · 교안 핵심 내용 기반으로 출제됩니다</span>
+                      <span>
+                        {config.file.extractedText
+                          ? '텍스트 추출 완료 · 빠르게 퀴즈를 생성할 준비가 되었습니다'
+                          : '업로드 완료 · 교안 핵심 내용 기반으로 출제됩니다'}
+                      </span>
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}

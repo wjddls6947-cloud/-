@@ -10,7 +10,9 @@ export interface UploadedLessonFile {
   name: string;
   mimeType: string;
   size: number;
-  dataBase64: string;
+  dataBase64?: string;
+  extractedText?: string;
+  slideCount?: number;
 }
 
 export interface QuizConfig {
