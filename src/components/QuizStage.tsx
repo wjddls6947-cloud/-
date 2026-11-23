@@ -8,15 +8,27 @@ import {
   Trophy,
   XCircle,
 } from 'lucide-react';
-import type { QuizAnswerRecord, QuizQuestion, TimeLimitSeconds } from '../types/quiz';
+import type {
+  QuizAnswerRecord,
+  QuizDifficulty,
+  QuizQuestion,
+  TimeLimitSeconds,
+} from '../types/quiz';
 import { soundEngine } from '../utils/sound';
 
 interface QuizStageProps {
   quizTitle: string;
   questions: QuizQuestion[];
   timeLimit: TimeLimitSeconds;
+  difficulty?: QuizDifficulty;
   onFinishQuiz: (records: QuizAnswerRecord[]) => void;
 }
+
+const DIFFICULTY_LABELS: Record<QuizDifficulty, string> = {
+  ELEMENTARY: '초등학교 수준',
+  MIDDLE: '중학교 수준',
+  HIGH: '고등학교 수준',
+};
 
 const AUTO_ADVANCE_MS = 3000;
 
@@ -24,6 +36,7 @@ export function QuizStage({
   quizTitle,
   questions,
   timeLimit,
+  difficulty = 'MIDDLE',
   onFinishQuiz,
 }: QuizStageProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -238,6 +251,10 @@ export function QuizStage({
             <span className="font-semibold text-amber-300">
               {currentQuestion.type === 'OX' ? 'OX 퀴즈' : '객관식 4지선다'}
             </span>
+            <span className="text-slate-500" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-slate-300">{DIFFICULTY_LABELS[difficulty]}</span>
           </div>
         </div>
 

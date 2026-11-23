@@ -4,6 +4,8 @@ export type QuestionType = 'OX' | 'MULTIPLE_CHOICE';
 
 export type TimeLimitSeconds = 5 | 10 | 15;
 
+export type QuizDifficulty = 'ELEMENTARY' | 'MIDDLE' | 'HIGH';
+
 export type GameStage = 'SETUP' | 'LOADING' | 'PLAYING' | 'REVEAL' | 'RESULT';
 
 export interface UploadedLessonFile {
@@ -21,6 +23,7 @@ export interface QuizConfig {
   file: UploadedLessonFile | null;
   questionCount: number;
   timeLimit: TimeLimitSeconds;
+  difficulty: QuizDifficulty;
   soundEnabled: boolean;
 }
 

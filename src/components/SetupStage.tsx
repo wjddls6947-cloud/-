@@ -4,6 +4,7 @@ import {
   BookOpen,
   Clock,
   FileText,
+  GraduationCap,
   Hash,
   Minus,
   Play,
@@ -14,7 +15,12 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type { QuizConfig, TimeLimitSeconds, UploadedLessonFile } from '../types/quiz';
+import type {
+  QuizConfig,
+  QuizDifficulty,
+  TimeLimitSeconds,
+  UploadedLessonFile,
+} from '../types/quiz';
 import { extractTextFromPptxFile } from '../utils/pptx';
 import { soundEngine } from '../utils/sound';
 
@@ -27,6 +33,11 @@ interface SetupStageProps {
 }
 
 const QUESTION_PRESETS = [5, 10, 15, 20];
+const DIFFICULTY_OPTIONS: Array<{ value: QuizDifficulty; label: string; hint: string }> = [
+  { value: 'ELEMENTARY', label: '초등학교', hint: '쉬운 어휘·기초' },
+  { value: 'MIDDLE', label: '중학교', hint: '교과 개념·원리' },
+  { value: 'HIGH', label: '고등학교', hint: '심화 용어·응용' },
+];
 const TIME_OPTIONS: Array<{ seconds: TimeLimitSeconds; label: string; hint: string }> = [
   { seconds: 5, label: '5초', hint: '스피드 퀴즈' },
   { seconds: 10, label: '10초', hint: '표준 속도' },
@@ -483,7 +494,7 @@ export function SetupStage({
                 2. 퀴즈 규칙 설정
               </h2>
               <p className="mt-1 text-xs text-slate-300">
-                문제 수와 한 문제당 제한 시간을 정해주세요
+                문제 수, 난이도(학교 수준), 제한 시간을 정해주세요
               </p>
             </div>
 
@@ -560,6 +571,43 @@ export function SetupStage({
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Difficulty (School Level) */}
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <GraduationCap className="h-4 w-4 text-amber-400" aria-hidden="true" />
+                <span>문제 난이도 (학교 수준)</span>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2.5">
+                {DIFFICULTY_OPTIONS.map((opt) => {
+                  const selected = config.difficulty === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playClick();
+                        onUpdateConfig({ difficulty: opt.value });
+                      }}
+                      className={`cursor-pointer rounded-xl border px-2.5 py-3 text-center transition-colors ${
+                        selected
+                          ? 'border-amber-400 bg-amber-400 text-slate-950'
+                          : 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="text-sm font-extrabold whitespace-nowrap">{opt.label}</div>
+                      <div
+                        className={`mt-0.5 text-[11px] font-medium ${
+                          selected ? 'text-slate-900' : 'text-slate-300'
+                        }`}
+                      >
+                        {opt.hint}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

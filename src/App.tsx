@@ -19,7 +19,14 @@ const INITIAL_CONFIG: QuizConfig = {
   file: null,
   questionCount: 10,
   timeLimit: 10,
+  difficulty: 'MIDDLE',
   soundEnabled: true,
+};
+
+const DIFFICULTY_LABEL: Record<QuizConfig['difficulty'], string> = {
+  ELEMENTARY: '초등학교',
+  MIDDLE: '중학교',
+  HIGH: '고등학교',
 };
 
 export default function App() {
@@ -67,10 +74,12 @@ export default function App() {
               mode: 'keyword',
               keyword: config.keyword.trim(),
               questionCount: config.questionCount,
+              difficulty: config.difficulty,
             }
           : {
               mode: 'file',
               questionCount: config.questionCount,
+              difficulty: config.difficulty,
               file: config.file
                 ? {
                     name: config.file.name,
@@ -193,8 +202,8 @@ export default function App() {
           </h2>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-300">
             {config.mode === 'file' && config.file
-              ? `교안 "${config.file.name}"의 핵심 내용을 분석해 OX와 객관식 문제 ${config.questionCount}개를 무작위로 섞는 중입니다.`
-              : `"${config.keyword.trim().slice(0, 40)}" 주제의 OX와 객관식 문제 ${config.questionCount}개를 생성하고 있습니다.`}
+              ? `교안 "${config.file.name}"의 핵심 내용을 ${DIFFICULTY_LABEL[config.difficulty]} 수준에 맞춰 OX·객관식 ${config.questionCount}문제로 출제하는 중입니다.`
+              : `"${config.keyword.trim().slice(0, 40)}" 주제를 ${DIFFICULTY_LABEL[config.difficulty]} 수준에 맞춰 OX·객관식 ${config.questionCount}문제로 생성하고 있습니다.`}
           </p>
           <button
             type="button"
@@ -212,6 +221,7 @@ export default function App() {
           quizTitle={quizTitle}
           questions={questions}
           timeLimit={config.timeLimit}
+          difficulty={config.difficulty}
           onFinishQuiz={handleFinishQuiz}
         />
       )}

@@ -12,10 +12,13 @@ export interface ApiResponse {
   setHeader?: (name: string, value: string) => void;
 }
 
+type QuizDifficulty = 'ELEMENTARY' | 'MIDDLE' | 'HIGH';
+
 interface GenerateQuizBody {
   mode?: 'keyword' | 'file';
   keyword?: string;
   questionCount?: number;
+  difficulty?: QuizDifficulty;
   file?: {
     name: string;
     mimeType: string;
@@ -23,6 +26,27 @@ interface GenerateQuizBody {
     dataBase64?: string;
   };
 }
+
+const DIFFICULTY_GUIDES: Record<
+  QuizDifficulty,
+  { label: string; promptRule: string }
+> = {
+  ELEMENTARY: {
+    label: '초등학교 수준',
+    promptRule:
+      '초등학생이 쉽게 읽고 이해할 수 있는 친숙하고 쉬운 일상 어휘와 간결한 문장을 사용하세요. 어려운 전문 용어나 한자어는 쉬운 말로 풀어서 묻고, 기초 핵심 개념과 생활 속 예시 중심으로 출제하세요. 해설도 초등학생 눈높이에 맞게 쉽고 친절하게 작성하세요.',
+  },
+  MIDDLE: {
+    label: '중학교 수준',
+    promptRule:
+      '중학생 교과 수준에 맞는 표준 개념 용어와 기본 원리·특징을 정확히 묻는 문제를 출제하세요. 지나치게 지엽적이거나 고등 심화 수준의 전문 추론은 피하고, 개념을 바르게 이해했는지 확인할 수 있는 명쾌한 문제와 해설을 작성하세요.',
+  },
+  HIGH: {
+    label: '고등학교 수준',
+    promptRule:
+      '고등학생 교과 심화 수준에 맞는 학술적·전문적 개념 용어, 원리 간의 인과관계, 비교·분석 및 응용 이해를 묻는 변별력 있는 문제를 출제하세요. 객관식 오답 선지도 개념을 정확히 알지 못하면 헷갈릴 수 있도록 정교하게 구성하고, 해설은 논리적 근거를 담아 작성하세요.',
+  },
+};
 
 interface RawQuizItem {
   type: 'OX' | 'MULTIPLE_CHOICE';
@@ -208,6 +232,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const mode = body.mode === 'file' ? 'file' : 'keyword';
+    const difficulty: QuizDifficulty =
+      body.difficulty === 'ELEMENTARY' || body.difficulty === 'HIGH'
+        ? body.difficulty
+        : 'MIDDLE';
+    const difficultyGuide = DIFFICULTY_GUIDES[difficulty];
     const rawCount = Number(body.questionCount);
     const questionCount = Number.isFinite(rawCount)
       ? Math.min(30, Math.max(1, Math.round(rawCount)))
@@ -237,8 +266,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const systemInstruction = `당신은 수업 내용을 핵심 개념 중심으로 재미있고 정확하게 복습할 수 있도록 돕는 대한민국 최고의 퀴즈쇼 출제 교사입니다.
 사용자가 제공한 키워드 또는 수업 교안(PDF/PPT/텍스트)을 바탕으로 OX 퀴즈와 4지선다 객관식 퀴즈를 출제합니다.
 
+[출제 난이도 기준: ${difficultyGuide.label}]
+${difficultyGuide.promptRule}
+
 [필수 출제 규칙]
-1. 모든 문제, 선택지, 해설, 제목은 자연스럽고 정확한 한국어로 작성하세요.
+1. 모든 문제, 선택지, 해설, 제목은 선택된 난이도(${difficultyGuide.label})에 알맞은 자연스럽고 정확한 한국어로 작성하세요.
 2. 요청된 총 문제 수(${questionCount}개)를 정확히 지키고, OX 퀴즈 ${oxCount}개와 4지선다 객관식 퀴즈 ${mcCount}개를 섞어 생성하세요.
 3. OX 퀴즈(type: "OX") 규칙:
    - 참/거짓이 명확히 판별되는 핵심 개념 문장을 출제하세요. (애매한 표현 금지)
@@ -248,7 +280,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
    - options는 반드시 서로 구별되는 4개의 선택지를 제공하세요.
    - 정답 index(0~3)를 correctIndex에 정확히 지정하세요.
 5. 해설(explanation) 규칙:
-   - 각 문제를 푼 직후 학습자가 빠르게 읽고 핵심을 이해할 수 있도록 1~2문장(40~110자 내외)으로 간결하고 명쾌하게 설명하세요.
+   - 각 문제를 푼 직후 학습자가 빠르게 읽고 핵심을 이해할 수 있도록 ${difficultyGuide.label} 눈높이에 맞춰 1~2문장(40~110자 내외)으로 간결하고 명쾌하게 설명하세요.
 6. 교안 파일이 제공된 경우, 반드시 그 교안의 실제 개념·용어·원리·사례에 근거하여 출제하세요.`;
 
     const parts: Array<
@@ -263,7 +295,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return;
       }
       parts.push({
-        text: `다음 키워드 및 학습 내용을 바탕으로 배운 내용을 정리하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n[학습 키워드/내용]\n${keyword}`,
+        text: `다음 키워드 및 학습 내용을 바탕으로 [${difficultyGuide.label}] 어휘와 문제 수준에 맞는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n[학습 키워드/내용]\n${keyword}`,
       });
     } else {
       const file = body.file;
@@ -277,7 +309,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (file.extractedText && file.extractedText.trim().length > 0) {
         const cleanExtracted = file.extractedText.trim().slice(0, 80000);
         parts.push({
-          text: `다음은 수업 교안 파일("${file.name}")에서 추출한 전체 내용입니다. 이 내용을 바탕으로 핵심 개념을 복습하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${cleanExtracted}`,
+          text: `다음은 수업 교안 파일("${file.name}")에서 추출한 전체 내용입니다. 이 내용을 바탕으로 [${difficultyGuide.label}] 어휘와 문제 수준에 맞는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${cleanExtracted}`,
         });
       } else {
         const base64Clean = (file.dataBase64 ?? '').includes(',')
@@ -308,7 +340,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             },
           });
           parts.push({
-            text: `첨부된 수업 교안 PDF("${file.name}")의 핵심 학습 내용을 정리하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.`,
+            text: `첨부된 수업 교안 PDF("${file.name}")의 핵심 학습 내용을 [${difficultyGuide.label}] 어휘와 문제 수준에 맞춰 정리하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.`,
           });
         } else if (
           lowerName.endsWith('.pptx') ||
@@ -317,7 +349,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ) {
           const slideText = await extractTextFromPptx(fileBuffer);
           parts.push({
-            text: `다음은 수업 교안 PowerPoint("${file.name}")에서 추출한 슬라이드 전체 내용입니다. 이 내용을 바탕으로 핵심 개념을 복습하는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${slideText}`,
+            text: `다음은 수업 교안 PowerPoint("${file.name}")에서 추출한 슬라이드 전체 내용입니다. 이 내용을 바탕으로 [${difficultyGuide.label}] 어휘와 문제 수준에 맞는 혼합 퀴즈 ${questionCount}문제(OX ${oxCount}문제, 객관식 ${mcCount}문제)를 출제해주세요.\n\n${slideText}`,
           });
         } else if (
           lowerName.endsWith('.txt') ||
