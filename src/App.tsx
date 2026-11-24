@@ -20,6 +20,7 @@ const INITIAL_CONFIG: QuizConfig = {
   questionCount: 10,
   timeLimit: 10,
   difficulty: 'MIDDLE',
+  advanceMode: 'auto',
   soundEnabled: true,
 };
 
@@ -222,6 +223,7 @@ export default function App() {
           questions={questions}
           timeLimit={config.timeLimit}
           difficulty={config.difficulty}
+          advanceMode={config.advanceMode}
           onFinishQuiz={handleFinishQuiz}
         />
       )}

@@ -9,6 +9,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type {
+  AdvanceMode,
   QuizAnswerRecord,
   QuizDifficulty,
   QuizQuestion,
@@ -21,6 +22,7 @@ interface QuizStageProps {
   questions: QuizQuestion[];
   timeLimit: TimeLimitSeconds;
   difficulty?: QuizDifficulty;
+  advanceMode?: AdvanceMode;
   onFinishQuiz: (records: QuizAnswerRecord[]) => void;
 }
 
@@ -37,6 +39,7 @@ export function QuizStage({
   questions,
   timeLimit,
   difficulty = 'MIDDLE',
+  advanceMode = 'auto',
   onFinishQuiz,
 }: QuizStageProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -113,9 +116,9 @@ export function QuizStage({
     return () => window.clearInterval(intervalId);
   }, [currentIndex, phase, timeLimit, currentQuestion.id]);
 
-  // 3-second auto-advance timer during REVEAL phase
+  // 3-second auto-advance timer during REVEAL phase (only in auto mode)
   useEffect(() => {
-    if (phase !== 'REVEAL') return;
+    if (phase !== 'REVEAL' || advanceMode !== 'auto') return;
 
     const startTime = performance.now();
     setRevealRemainingMs(AUTO_ADVANCE_MS);
@@ -133,7 +136,7 @@ export function QuizStage({
 
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, currentIndex]);
+  }, [phase, currentIndex, advanceMode]);
 
   const advanceToNext = () => {
     if (currentIndex + 1 >= totalQuestions) {
@@ -477,38 +480,62 @@ export function QuizStage({
               {currentQuestion.explanation}
             </p>
 
-            {/* 3-Second Auto-Advance Bar */}
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-3.5">
-              <div className="flex-1 min-w-[200px]">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                  <span>
-                    {currentIndex + 1 >= totalQuestions
-                      ? `${revealSecondsLeft}초 후 결과 화면으로 이동합니다`
-                      : `${revealSecondsLeft}초 후 다음 문제로 자동 이동합니다`}
-                  </span>
-                  <span className="font-mono tabular-nums">
-                    {(revealRemainingMs / 1000).toFixed(1)}s
-                  </span>
+            {/* Auto-Advance Bar or Manual Next Button */}
+            {advanceMode === 'auto' ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-3.5">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                    <span>
+                      {currentIndex + 1 >= totalQuestions
+                        ? `${revealSecondsLeft}초 후 결과 화면으로 이동합니다`
+                        : `${revealSecondsLeft}초 후 다음 문제로 자동 이동합니다`}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      {(revealRemainingMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/10">
+                    <div
+                      className={`h-full origin-left rounded-full ${
+                        isCorrectReveal ? 'bg-emerald-600' : 'bg-rose-600'
+                      }`}
+                      style={{ transform: `scaleX(${revealProgress})` }}
+                    />
+                  </div>
                 </div>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/10">
-                  <div
-                    className={`h-full origin-left rounded-full ${
-                      isCorrectReveal ? 'bg-emerald-600' : 'bg-rose-600'
-                    }`}
-                    style={{ transform: `scaleX(${revealProgress})` }}
-                  />
-                </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={advanceToNext}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
-              >
-                <span>{currentIndex + 1 >= totalQuestions ? '결과 바로 보기' : '바로 다음 문제'}</span>
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playClick();
+                    advanceToNext();
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
+                >
+                  <span>{currentIndex + 1 >= totalQuestions ? '결과 바로 보기' : '바로 다음 문제'}</span>
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-3.5">
+                <span className="text-xs font-semibold text-slate-700">
+                  해설을 확인한 뒤 버튼을 누르면 다음으로 넘어갑니다 (Space / Enter)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playClick();
+                    advanceToNext();
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
+                >
+                  <span>
+                    {currentIndex + 1 >= totalQuestions ? '최종 결과 보기' : '다음 문제 나오기'}
+                  </span>
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>

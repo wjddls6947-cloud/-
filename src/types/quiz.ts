@@ -2,9 +2,11 @@ export type QuizInputMode = 'keyword' | 'file';
 
 export type QuestionType = 'OX' | 'MULTIPLE_CHOICE';
 
-export type TimeLimitSeconds = 5 | 10 | 15;
+export type TimeLimitSeconds = 10 | 15 | 20;
 
 export type QuizDifficulty = 'ELEMENTARY' | 'MIDDLE' | 'HIGH';
+
+export type AdvanceMode = 'auto' | 'manual';
 
 export type GameStage = 'SETUP' | 'LOADING' | 'PLAYING' | 'REVEAL' | 'RESULT';
 
@@ -24,6 +26,7 @@ export interface QuizConfig {
   questionCount: number;
   timeLimit: TimeLimitSeconds;
   difficulty: QuizDifficulty;
+  advanceMode: AdvanceMode;
   soundEnabled: boolean;
 }
 

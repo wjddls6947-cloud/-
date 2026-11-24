@@ -10,12 +10,13 @@ import {
   Play,
   Plus,
   Sparkles,
+  StepForward,
   Trash2,
   Upload,
   Volume2,
-  VolumeX,
 } from 'lucide-react';
 import type {
+  AdvanceMode,
   QuizConfig,
   QuizDifficulty,
   TimeLimitSeconds,
@@ -39,9 +40,13 @@ const DIFFICULTY_OPTIONS: Array<{ value: QuizDifficulty; label: string; hint: st
   { value: 'HIGH', label: '고등학교', hint: '심화 용어·응용' },
 ];
 const TIME_OPTIONS: Array<{ seconds: TimeLimitSeconds; label: string; hint: string }> = [
-  { seconds: 5, label: '5초', hint: '스피드 퀴즈' },
-  { seconds: 10, label: '10초', hint: '표준 속도' },
-  { seconds: 15, label: '15초', hint: '여유 있게' },
+  { seconds: 10, label: '10초', hint: '스피드 퀴즈' },
+  { seconds: 15, label: '15초', hint: '표준 속도' },
+  { seconds: 20, label: '20초', hint: '여유 있게' },
+];
+const ADVANCE_OPTIONS: Array<{ value: AdvanceMode; label: string; hint: string }> = [
+  { value: 'auto', label: '자동 진행', hint: '해설 3초 후 자동 이동' },
+  { value: 'manual', label: '수동 진행', hint: '버튼 눌러야 다음 문제' },
 ];
 
 const QUICK_TOPICS = [
@@ -201,14 +206,6 @@ export function SetupStage({
   const handleCountChange = (next: number) => {
     const clamped = Math.min(30, Math.max(1, Math.round(next)));
     onUpdateConfig({ questionCount: clamped });
-  };
-
-  const handlePreviewSound = () => {
-    soundEngine.unlock();
-    const prev = soundEngine.isEnabled();
-    soundEngine.setEnabled(true);
-    soundEngine.playCorrect();
-    soundEngine.setEnabled(prev);
   };
 
   const canStart =
@@ -650,46 +647,40 @@ export function SetupStage({
               </div>
             </div>
 
-            {/* Sound Toggle & Preview */}
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                {config.soundEnabled ? (
-                  <Volume2 className="h-4 w-4 text-amber-300 shrink-0" aria-hidden="true" />
-                ) : (
-                  <VolumeX className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
-                )}
-                <div>
-                  <p className="text-xs font-semibold text-white">정답·오답 효과음</p>
-                  <p className="text-[11px] text-slate-300">
-                    {config.soundEnabled ? '정답 팡파르와 오답 알림음 재생' : '음소거 상태로 진행'}
-                  </p>
-                </div>
+            {/* Next Question Progression Mode (Auto / Manual) */}
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <StepForward className="h-4 w-4 text-amber-400" aria-hidden="true" />
+                <span>다음 문제 넘어가기</span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handlePreviewSound}
-                  className="cursor-pointer rounded-lg border border-white/15 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 whitespace-nowrap"
-                >
-                  미리듣기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !config.soundEnabled;
-                    onUpdateConfig({ soundEnabled: next });
-                    soundEngine.setEnabled(next);
-                    if (next) soundEngine.playClick();
-                  }}
-                  aria-pressed={config.soundEnabled}
-                  className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap ${
-                    config.soundEnabled
-                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                      : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                  }`}
-                >
-                  {config.soundEnabled ? '켜짐' : '꺼짐'}
-                </button>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {ADVANCE_OPTIONS.map((opt) => {
+                  const selected = config.advanceMode === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playClick();
+                        onUpdateConfig({ advanceMode: opt.value });
+                      }}
+                      className={`cursor-pointer rounded-xl border px-3 py-3 text-center transition-colors ${
+                        selected
+                          ? 'border-amber-400 bg-amber-400 text-slate-950'
+                          : 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="text-sm font-extrabold whitespace-nowrap">{opt.label}</div>
+                      <div
+                        className={`mt-0.5 text-[11px] font-medium ${
+                          selected ? 'text-slate-900' : 'text-slate-300'
+                        }`}
+                      >
+                        {opt.hint}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -768,11 +759,11 @@ export function SetupStage({
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
           <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
             <Clock className="h-4 w-4" aria-hidden="true" />
-            <span>03. 해설 3초 자동 진행</span>
+            <span>03. 해설 확인 후 진행</span>
           </div>
           <p className="mt-2 text-sm font-semibold text-white">핵심 해설 확인 후 다음 문제</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-300">
-            풀이 직후 간단한 핵심 해설을 3초간 보여준 뒤 자동으로 다음 문제로 부드럽게 넘어갑니다.
+            풀이 직후 간단한 핵심 해설을 확인하고 설정에 따라 3초 후 자동 또는 버튼으로 다음 문제로 이동합니다.
           </p>
         </div>
       </section>
